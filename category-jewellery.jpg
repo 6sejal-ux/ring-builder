@@ -1,0 +1,40 @@
+import productVideos from '@/data/productVideos.json';
+
+const MEDIA_BASE = 'https://connect.overnightmountings.com/gemfind/library/Images_And_Videos';
+
+const videoMap = productVideos as Record<string, string[]>;
+
+/**
+ * Given a Shopify variant SKU like "84672-8.0 RD-14K-Lab",
+ * extract the base SKU "84672-8.0 RD" to look up videos.
+ */
+function extractBaseSku(variantSku: string): string {
+  // Remove the metal/diamond suffix: "-14K-Lab", "-14K-Nat", "-18K-Lab", "-18K-Nat", "-Plat-Lab", "-Plat-Nat"
+  return variantSku.replace(/-(14K|18K|Plat)-(Lab|Nat)$/, '').trim();
+}
+
+export interface ProductVideoInfo {
+  videos: Array<{ url: string; label: string }>;
+}
+
+export function getProductVideos(variantSkus: string[]): ProductVideoInfo {
+  for (const sku of variantSkus) {
+    const baseSku = extractBaseSku(sku);
+    const entry = videoMap[baseSku];
+    if (entry && entry.length > 1) {
+      const dir = entry[0];
+      const videos = entry.slice(1).map(fname => {
+        // Extract label from filename like "50903-E.video.rose.mp4" → "Rose"
+        const parts = fname.replace('.mp4', '').split('.');
+        const colorPart = parts[parts.length - 1];
+        const label = colorPart.charAt(0).toUpperCase() + colorPart.slice(1);
+        return {
+          url: `${MEDIA_BASE}/${dir}/${fname}`,
+          label,
+        };
+      });
+      return { videos };
+    }
+  }
+  return { videos: [] };
+}

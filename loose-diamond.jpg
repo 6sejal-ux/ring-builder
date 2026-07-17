@@ -1,0 +1,117 @@
+import { useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { StoreHeader } from "@/components/StoreHeader";
+import { StoreFooter } from "@/components/StoreFooter";
+import { ProductCard } from "@/components/ProductCard";
+import { useProducts } from "@/hooks/useProducts";
+import { Loader2, Package } from "lucide-react";
+
+const CATEGORIES = [
+  { label: "All", value: "" },
+  { label: "Rings", value: "rings" },
+  { label: "Earrings", value: "earrings" },
+  { label: "Bracelets", value: "bracelets" },
+  { label: "Pendants", value: "pendants" },
+  { label: "Wedding Bands", value: "wedding bands" },
+];
+
+function categoryToQuery(category: string): string | undefined {
+  if (!category) return undefined;
+  return `product_type:${category}`;
+}
+
+const Collections = () => {
+  const [searchParams] = useSearchParams();
+  const category = searchParams.get("category") || "";
+  const query = categoryToQuery(category);
+  const { data: products, isLoading, error } = useProducts(50, query);
+
+  const activeCategory = CATEGORIES.find(
+    (c) => c.value.toLowerCase() === category.toLowerCase()
+  );
+  const title = activeCategory?.label === "All" || !activeCategory
+    ? "All Jewelry"
+    : activeCategory.label;
+
+  return (
+    <div className="min-h-screen">
+      <StoreHeader />
+
+      {/* Category Header */}
+      <section className="pt-10 pb-6 bg-card">
+        <div className="container text-center">
+          <p className="text-xs tracking-[0.4em] uppercase text-muted-foreground mb-3 font-body">
+            Collections
+          </p>
+          <h1 className="font-heading text-4xl md:text-5xl font-light mb-8">
+            {title}
+          </h1>
+
+          {/* Category Pills */}
+          <div className="flex flex-wrap justify-center gap-2 md:gap-3">
+            {CATEGORIES.map((cat) => {
+              const isActive = cat.value.toLowerCase() === category.toLowerCase();
+              return (
+                <Link
+                  key={cat.value}
+                  to={cat.value ? `/collections?category=${encodeURIComponent(cat.value)}` : "/collections"}
+                  className={`px-5 py-2 text-xs tracking-[0.15em] uppercase font-body border transition-colors ${
+                    isActive
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-foreground/70 border-border hover:border-foreground/30"
+                  }`}
+                >
+                  {cat.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Products Grid */}
+      <section className="py-12 md:py-16">
+        <div className="container">
+          {isLoading && (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {error && (
+            <div className="text-center py-20 text-muted-foreground">
+              <p>Something went wrong loading products.</p>
+            </div>
+          )}
+
+          {!isLoading && !error && products && products.length === 0 && (
+            <div className="text-center py-20">
+              <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="font-heading text-2xl mb-2">No Products Found</h3>
+              <p className="text-muted-foreground font-body max-w-md mx-auto">
+                No products found in this category. Try browsing a different collection.
+              </p>
+            </div>
+          )}
+
+          {products && products.length > 0 && (
+            <>
+              <p className="text-sm text-muted-foreground font-body mb-6">
+                Showing {products.length} product{products.length !== 1 ? "s" : ""}
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                {products.map((product) => (
+                  <ProductCard key={product.node.id} product={product} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      <StoreFooter />
+    </div>
+  );
+};
+
+export default Collections;

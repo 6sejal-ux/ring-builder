@@ -1,0 +1,93 @@
+// Pick product images by metal color and preferred view (front).
+// Primary signal: Shopify variant.selectedOptions + variant.image (per-variant photo).
+// Secondary: ProductGallery metafield items' `variant` field.
+// Last resort: URL/alt token parsing for files following our CSV naming convention.
+
+import type { ShopifyProduct, ProductGallery } from "./shopify";
+
+export type MetalColor = "white" | "yellow" | "rose" | null;
+
+export const detectMetalColor = (label: string | undefined | null): MetalColor => {
+  if (!label) return null;
+  const s = label.toLowerCase();
+  if (/(rose|pink|\brg\b)/.test(s)) return "rose";
+  if (/(yellow|\byg\b)/.test(s)) return "yellow";
+  if (/(white|\bwg\b|platinum|\bpt\b)/.test(s)) return "white";
+  return null;
+};
+
+const NON_FRONT_TOKENS = [".alt", ".alt1", ".set", "3d", "angle", "side", "top", "hand", "model", "lifestyle", "video", "back"];
+const isFrontView = (url: string) => {
+  const s = url.toLowerCase();
+  return !NON_FRONT_TOKENS.some((t) => s.includes(t));
+};
+
+const matchesMetalUrl = (url: string, metal: MetalColor): boolean => {
+  if (!metal) return false;
+  const s = url.toLowerCase();
+  if (metal === "rose") return /(rose|pink|\.alt1\.|[-_]rg[-_.])/.test(s);
+  if (metal === "yellow") return /(yellow|\.set\.alt\.|[-_]yg[-_.])/.test(s);
+  if (metal === "white") {
+    return !/(rose|pink|\.alt1\.|[-_]rg[-_.]|yellow|\.set\.alt\.|[-_]yg[-_.])/.test(s);
+  }
+  return false;
+};
+
+export interface PickedImage {
+  url: string;
+  alt: string;
+}
+
+/**
+ * Pick the best image for a product given a preferred metal color.
+ * Strategy:
+ *  1. If a variant exists whose Metal option matches the preferred color, use its `image`.
+ *  2. Else, if the gallery metafield has an item tagged with that variant color, use it.
+ *  3. Else, scan all candidate URLs for one matching metal naming convention.
+ *  4. Else, prefer a "front view" candidate (base .jpg without alt/angle/etc.).
+ *  5. Else, return the first candidate.
+ */
+export const pickProductImageForMetal = (
+  product: ShopifyProduct["node"],
+  preferredMetal: MetalColor,
+  gallery: ProductGallery | null
+): PickedImage | null => {
+  const fallbackTitle = product.title;
+
+  // 1) Variant-image lookup (most reliable)
+  if (preferredMetal) {
+    for (const edge of product.variants.edges) {
+      const v = edge.node;
+      const metalOpt = v.selectedOptions.find((o) => /metal/i.test(o.name));
+      if (metalOpt && detectMetalColor(metalOpt.value) === preferredMetal && v.image?.url) {
+        return { url: v.image.url, alt: v.image.altText || fallbackTitle };
+      }
+    }
+
+    // 2) Gallery metafield item tagged with this variant
+    const taggedGalleryItem = gallery?.images?.find((g) => detectMetalColor(g.variant) === preferredMetal);
+    if (taggedGalleryItem) {
+      return { url: taggedGalleryItem.url, alt: taggedGalleryItem.alt || fallbackTitle };
+    }
+  }
+
+  // Build the full candidate pool (gallery + standard images)
+  const candidates: PickedImage[] = [];
+  gallery?.images?.forEach((g) => candidates.push({ url: g.url, alt: g.alt || fallbackTitle }));
+  product.images.edges.forEach((e) => candidates.push({ url: e.node.url, alt: e.node.altText || fallbackTitle }));
+
+  if (!candidates.length) return null;
+
+  // 3) URL-token match for the metal
+  if (preferredMetal) {
+    const urlMatch = candidates.find((c) => matchesMetalUrl(c.url, preferredMetal));
+    if (urlMatch) return urlMatch;
+  }
+
+  // 4) Prefer front view
+  const front = candidates.find((c) => isFrontView(c.url));
+  if (front) return front;
+
+  // 5) Anything
+  return candidates[0];
+};
